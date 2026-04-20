@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ header.company }} — דוח נוכחות</title>
+  <style>
+    @page { size: A4 landscape; margin: 1.5cm; }
+
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      direction: rtl;
+      unicode-bidi: embed;
+    }
+
+    .header {
+      text-align: center;
+      background-color: #e8e8e8;
+      padding: 10px;
+      margin-bottom: 15px;
+      border-bottom: 2px solid #bbb;
+    }
+
+    .header h2 {
+      margin: 0 0 4px 0;
+      font-size: 16px;
+    }
+
+    .header h3 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: normal;
+      color: #444;
+    }
+
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+      margin-bottom: 20px;
+    }
+
+    table.data-table th {
+      background-color: #d0d0d0;
+      border: 1px solid #aaa;
+      padding: 5px 6px;
+      text-align: center;
+    }
+
+    table.data-table td {
+      border: 1px solid #ccc;
+      padding: 4px 6px;
+      text-align: center;
+    }
+
+    table.data-table tr:hover {
+      background-color: #fffacd;
+    }
+
+    table.data-table tr.sabbath {
+      background-color: #ffe4e1;
+    }
+
+    .summary-table {
+      float: right;
+      width: 38%;
+      border-collapse: collapse;
+      font-size: 10px;
+      margin-top: 5px;
+    }
+
+    .summary-table td {
+      border: 1px solid #ccc;
+      padding: 4px 8px;
+    }
+
+    .summary-table .label {
+      font-weight: bold;
+      background-color: #f0f0f0;
+      color: #555;
+    }
+
+    .clearfix::after {
+      content: "";
+      display: table;
+      clear: both;
+    }
+
+    .disclaimer {
+      margin-top: 18px;
+      padding: 8px 14px;
+      background-color: #fff8e1;
+      border: 1px solid #f0c040;
+      border-radius: 4px;
+      font-size: 10px;
+      color: #7a5c00;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h2>{{ header.company }}</h2>
+    <h3>דוח נוכחות מפורט עם שעות נוספות</h3>
+    {% if header.month_label %}
+    <p style="margin:4px 0 0 0; font-size:11px; color:#555;">{{ header.month_label }}</p>
+    {% endif %}
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>תאריך</th>
+        <th>יום</th>
+        <th>מקום ע"נ</th>
+        <th>כניסה</th>
+        <th>יציאה</th>
+        <th>הפסקה</th>
+        <th>סה"כ</th>
+        <th>שעות 100%</th>
+        <th>שעות 125%</th>
+        <th>שעות 150%</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr{% if row.is_sabbath %} class="sabbath"{% endif %}>
+        <td>{{ row.date.strftime("%d/%m/%Y") if row.date else "" }}</td>
+        <td>{{ row.weekday }}</td>
+        <td>{{ row.location }}</td>
+        <td>{{ row.entry_time.strftime("%H:%M") if row.entry_time else "" }}</td>
+        <td>{{ row.exit_time.strftime("%H:%M") if row.exit_time else "" }}</td>
+        <td>{{ row.break_time.strftime("%H:%M") if row.break_time else "00:00" }}</td>
+        <td>{{ "%.2f"|format(row.total_hours) }}</td>
+        <td>{{ "%.2f"|format(row.hours_100) }}</td>
+        <td>{{ "%.2f"|format(row.hours_125) }}</td>
+        <td>{{ "%.2f"|format(row.hours_150) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="summary-table">
+    <tr>
+      <td class="label">ימים:</td>
+      <td>{{ header.work_days }}</td>
+    </tr>
+    <tr>
+      <td class="label">סה"כ שעות:</td>
+      <td>{{ "%.2f"|format(header.total_hours) }}</td>
+    </tr>
+    <tr>
+      <td class="label">שעות 100%:</td>
+      <td>{{ "%.2f"|format(header.hours_100) }}</td>
+    </tr>
+    <tr>
+      <td class="label">שעות 125%:</td>
+      <td>{{ "%.2f"|format(header.hours_125) }}</td>
+    </tr>
+    <tr>
+      <td class="label">שעות 150%:</td>
+      <td>{{ "%.2f"|format(header.hours_150) }}</td>
+    </tr>
+    <tr>
+      <td class="label">בונוס:</td>
+      <td>{{ header.bonus | int }}</td>
+    </tr>
+    <tr>
+      <td class="label">נסיעות:</td>
+      <td>{{ header.travel | int }}</td>
+    </tr>
+  </table>
+
+  <div class="clearfix"></div>
+
+  <div class="disclaimer">
+    &#x26A0; מסמך זה נוצר על-ידי <strong>מחולל דוחות הנוכחות האוטומטי</strong> ואינו דוח נוכחות אמיתי.
+    הנתונים בו הינם היפותטיים בלבד ואין להשתמש בו לכל מטרה משפטית, כספית או אחרת.
+  </div>
+
+</body>
+</html>

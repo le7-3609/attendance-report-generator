@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <title>דוח נוכחות חודשי</title>
+  <style>
+    @page { size: A4; margin: 2cm; }
+
+    body {
+      font-family: Arial, sans-serif;
+      direction: rtl;
+      unicode-bidi: embed;
+    }
+
+    .header {
+      text-align: center;
+      background-color: #f5f5f5;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #ccc;
+    }
+
+    .header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .summary-box {
+      margin-bottom: 20px;
+      border: 1px solid #ddd;
+      padding: 10px 15px;
+      background-color: #fafafa;
+      display: inline-block;
+      min-width: 280px;
+    }
+
+    .summary-box table {
+      border: none;
+      width: 100%;
+    }
+
+    .summary-box td {
+      padding: 3px 8px;
+      border: none;
+    }
+
+    .summary-box .label {
+      font-weight: bold;
+      color: #555;
+    }
+
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    table.data-table th {
+      background-color: #e0e0e0;
+      border: 1px solid #bbb;
+      padding: 6px 8px;
+      text-align: center;
+    }
+
+    table.data-table td {
+      border: 1px solid #ddd;
+      padding: 5px 8px;
+      text-align: center;
+    }
+
+    table.data-table tbody tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+
+    .footer {
+      margin-top: 25px;
+      text-align: center;
+      font-size: 10px;
+      color: #999;
+      border-top: 1px solid #eee;
+      padding-top: 8px;
+    }
+
+    .disclaimer {
+      margin-top: 18px;
+      padding: 8px 14px;
+      background-color: #fff8e1;
+      border: 1px solid #f0c040;
+      border-radius: 4px;
+      font-size: 10px;
+      color: #7a5c00;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h2>דוח נוכחות חודשי</h2>
+    {% if header.month_label %}
+    <p style="margin:5px 0 0 0; font-size:14px; color:#555;">{{ header.month_label }}</p>
+    {% endif %}
+  </div>
+
+  <div class="summary-box">
+    <table>
+      <tr>
+        <td class="label">ימי עבודה לחודש:</td>
+        <td>{{ header.work_days }}</td>
+      </tr>
+      <tr>
+        <td class="label">סה"כ שעות חודשיות:</td>
+        <td>{{ "%.2f"|format(header.total_hours) }}</td>
+      </tr>
+      <tr>
+        <td class="label">מחיר לשעה:</td>
+        <td>₪{{ "%.2f"|format(header.hourly_rate) }}</td>
+      </tr>
+      <tr>
+        <td class="label">סה"כ לתשלום:</td>
+        <td>₪{{ "%.2f"|format(header.total_pay) }}</td>
+      </tr>
+    </table>
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>תאריך</th>
+        <th>יום בשבוע</th>
+        <th>שעת כניסה</th>
+        <th>שעת יציאה</th>
+        <th>סה"כ שעות</th>
+        <th>הערות</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.date.strftime("%d/%m/%Y") if row.date else "" }}</td>
+        <td>{{ row.weekday }}</td>
+        <td>{{ row.entry_time.strftime("%H:%M") if row.entry_time else "" }}</td>
+        <td>{{ row.exit_time.strftime("%H:%M") if row.exit_time else "" }}</td>
+        <td>{{ "%.2f"|format(row.total_hours) }}</td>
+        <td>{{ row.notes }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+
+  <div class="disclaimer">
+    &#x26A0; דוח זה נוצר אוטומטית על ידי <strong>מחולל דוחות הנוכחות האוטומטי</strong> ואינו דוח נוכחות אמיתי.
+    הנתונים בו הינם היפותטיים בלבד ואין להשתמש בו לכל מטרה משפטית, כספית או אחרת.
+  </div>
+
+</body>
+</html>
