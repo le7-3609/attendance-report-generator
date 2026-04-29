@@ -8,7 +8,7 @@ from typing import Optional
 from src.domain.enums import ReportType
 
 
-@dataclass
+@dataclass(frozen=True)
 class AttendanceRow:
     """A single day row in an attendance report."""
 
@@ -26,7 +26,7 @@ class AttendanceRow:
     is_sabbath: bool = False    # Type B: Saturday flag
 
 
-@dataclass
+@dataclass(frozen=True)
 class TypeAHeader:
     """Summary fields for a Type A report."""
 
@@ -37,7 +37,7 @@ class TypeAHeader:
     month_label: str = ""       # e.g. "ינואר 2023"
 
 
-@dataclass
+@dataclass(frozen=True)
 class TypeBHeader:
     """Summary fields for a Type B report."""
 
@@ -53,11 +53,11 @@ class TypeBHeader:
     travel: float = 0.0
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReportData:
     """Full, typed report ready for variation and rendering."""
 
     report_type: ReportType
     header: TypeAHeader | TypeBHeader
-    rows: list[AttendanceRow] = field(default_factory=list)
+    rows: tuple[AttendanceRow, ...] = field(default_factory=tuple)
     source_filename: str = ""

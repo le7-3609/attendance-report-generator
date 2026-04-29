@@ -9,14 +9,10 @@ from src.domain.models import ReportData
 class BaseVariator(ABC):
 
     @abstractmethod
-    def vary(self, data: ReportData, *, seed: int | None = None) -> ReportData:
+    def vary(self, data: ReportData) -> ReportData:
         """Apply realistic variations to *data* and return new ReportData.
 
-        Parameters
-        ----------
-        data:
-            The parsed report to vary.
-        seed:
-            Optional RNG seed for reproducible output.  Pass the same seed
-            with the same input to get identical variations every time.
+        The original *data* object is never modified — frozen dataclasses
+        enforce this at runtime. Per-row determinism is achieved by seeding
+        the RNG from each row's date inside the concrete implementation.
         """

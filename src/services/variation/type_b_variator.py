@@ -1,26 +1,18 @@
 """Type B variation logic — adjusts times and recalculates overtime tiers."""
 from __future__ import annotations
 
-import copy
+import dataclasses
 import logging
 import random
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 
+from src.config.rules import TYPE_B_RULES, TypeBVariationRules
 from src.constants import HEB_WEEKDAYS as _HEB_WEEKDAYS
+from src.domain.exceptions import TransformationError
 from src.domain.models import AttendanceRow, ReportData, TypeBHeader
 from src.services.variation.base_variator import BaseVariator
 
 logger = logging.getLogger(__name__)
-
-# Overtime tier thresholds (Israeli labor law defaults)
-_REGULAR_THRESHOLD = 8.0    # first 8h at 100%
-_OT_125_HOURS = 2.0         # next 2h at 125%
-# remainder at 150%
-
-_ENTRY_DELTA_MINUTES = 10
-_EXIT_DELTA_MINUTES = 10
-_MIN_SHIFT_H = 1.0
-_MAX_SHIFT_H = 16.0
 
 _DEFAULT_LOCATIONS = [
     "תל אביב", "ירושלים", "חיפה", "ראשון לציון",
@@ -41,58 +33,69 @@ def _hours_between(t1: time, t2: time) -> float:
     return round((dt2 - dt1).total_seconds() / 3600, 2)
 
 
-def _calc_break(break_time: time | None) -> float:
-    if break_time is None:
-        return 0.0
-    return break_time.hour + break_time.minute / 60.0
-
-
-def _split_overtime(net_hours: float) -> tuple[float, float, float]:
+def _split_overtime(
+    net_hours: float,
+    regular_threshold: float,
+    ot_125_hours: float,
+) -> tuple[float, float, float]:
     """Split net working hours into 100% / 125% / 150% tiers."""
-    h100 = min(net_hours, _REGULAR_THRESHOLD)
-    h125 = min(max(net_hours - _REGULAR_THRESHOLD, 0.0), _OT_125_HOURS)
-    h150 = max(net_hours - _REGULAR_THRESHOLD - _OT_125_HOURS, 0.0)
+    h100 = min(net_hours, regular_threshold)
+    h125 = min(max(net_hours - regular_threshold, 0.0), ot_125_hours)
+    h150 = max(net_hours - regular_threshold - ot_125_hours, 0.0)
     return round(h100, 2), round(h125, 2), round(h150, 2)
 
 
 class TypeBVariator(BaseVariator):
     """Applies realistic random variations to a Type B report."""
 
-    def vary(self, data: ReportData, *, seed: int | None = None) -> ReportData:
-        if seed is not None:
-            random.seed(seed)
-        result = copy.deepcopy(data)
+    def __init__(self, rules: TypeBVariationRules = TYPE_B_RULES) -> None:
+        self._rules = rules
+
+    def vary(self, data: ReportData) -> ReportData:
+        rules = self._rules
         new_rows: list[AttendanceRow] = []
 
-        for row in result.rows:
+        for row in data.rows:
             if row.date is None:
                 continue
 
-            # If OCR failed to extract times, synthesise plausible ones
-            if row.entry_time is None or row.exit_time is None:
-                logger.debug("Synthesising times for incomplete row (date=%s).", row.date)
-                row.entry_time = time(8, random.randint(0, 30))
-                # ~20 % of synthesised shifts exceed 10 h (net) so 150 % overtime fires
-                if random.random() < 0.20:
-                    row.exit_time = time(random.randint(19, 20), random.randint(0, 59))
-                else:
-                    row.exit_time = time(random.randint(16, 18), random.randint(0, 59))
+            # Per-row deterministic RNG — seeded from the row's date so the
+            # same input always produces the same output, independent of call order.
+            d = row.date
+            rng = random.Random(d.year * 10000 + d.month * 100 + d.day)
 
-            original_gross_h = _hours_between(row.entry_time, row.exit_time)
-            break_h = _calc_break(row.break_time)
+            entry_time = row.entry_time
+            exit_time = row.exit_time
+
+            # If OCR failed to extract times, synthesise plausible ones
+            if entry_time is None or exit_time is None:
+                logger.debug("Synthesising times for incomplete row (date=%s).", row.date)
+                entry_time = time(8, rng.randint(0, 30))
+                # ~20% of synthesised shifts exceed 10 h (net) so 150% tier fires
+                if rng.random() < 0.20:
+                    exit_time = time(rng.randint(19, 20), rng.randint(0, 59))
+                else:
+                    exit_time = time(rng.randint(16, 18), rng.randint(0, 59))
+
+            original_gross_h = _hours_between(entry_time, exit_time)
 
             # Adjust entry
-            delta_entry = random.randint(-_ENTRY_DELTA_MINUTES, _ENTRY_DELTA_MINUTES)
-            new_entry = _add_minutes(row.entry_time, delta_entry)
+            delta_entry = rng.randint(-rules.entry_delta_minutes, rules.entry_delta_minutes)
+            new_entry = _add_minutes(entry_time, delta_entry)
 
             # Adjust exit (keep original gross duration ± small delta)
-            delta_exit = random.randint(-_EXIT_DELTA_MINUTES, _EXIT_DELTA_MINUTES)
+            delta_exit = rng.randint(-rules.exit_delta_minutes, rules.exit_delta_minutes)
             target_gross_minutes = int(original_gross_h * 60) + delta_exit
-            # ~15 % of weekday rows get a long shift so the 150 % tier fires
-            if random.random() < 0.15 and row.date.weekday() != 5:
-                target_gross_minutes = random.randint(int(10.5 * 60), int(12 * 60))
-            target_gross_minutes = max(int(_MIN_SHIFT_H * 60), target_gross_minutes)
-            target_gross_minutes = min(int(_MAX_SHIFT_H * 60), target_gross_minutes)
+
+            # ~15% of weekday rows get a long shift so the 150% tier fires
+            if rng.random() < rules.long_shift_probability and row.date.weekday() != 5:
+                target_gross_minutes = rng.randint(
+                    int(rules.long_shift_min_hours * 60),
+                    int(rules.long_shift_max_hours * 60),
+                )
+
+            target_gross_minutes = max(int(rules.min_shift_hours * 60), target_gross_minutes)
+            target_gross_minutes = min(int(rules.max_shift_hours * 60), target_gross_minutes)
             new_exit = _add_minutes(new_entry, target_gross_minutes)
 
             # Vary break time. Treat time(0,0) the same as None — OCR often
@@ -102,43 +105,62 @@ class TypeBVariator(BaseVariator):
                 and (row.break_time.hour > 0 or row.break_time.minute > 0)
             )
             if has_real_break:
-                break_delta = random.randint(-5, 5)
-                new_break_minutes = max(1, min(1439, row.break_time.hour * 60 + row.break_time.minute + break_delta))  # type: ignore[union-attr]
-                row.break_time = time(new_break_minutes // 60, new_break_minutes % 60)
+                break_delta = rng.randint(-rules.break_delta_minutes, rules.break_delta_minutes)
+                new_break_minutes = max(
+                    1,
+                    min(1439, row.break_time.hour * 60 + row.break_time.minute + break_delta),  # type: ignore[union-attr]
+                )
+                new_break_time = time(new_break_minutes // 60, new_break_minutes % 60)
                 break_h = new_break_minutes / 60.0
             else:
                 # Synthesise a plausible break: 20–45 minutes
-                break_minutes = random.randint(20, 45)
-                row.break_time = time(0, break_minutes)
+                break_minutes = rng.randint(
+                    rules.synthesised_break_min_minutes,
+                    rules.synthesised_break_max_minutes,
+                )
+                new_break_time = time(0, break_minutes)
                 break_h = break_minutes / 60.0
 
             # Net hours = gross − break
             net_h = round(_hours_between(new_entry, new_exit) - break_h, 2)
             net_h = max(0.0, net_h)
 
-            row.entry_time = new_entry
-            row.exit_time = new_exit
-            row.total_hours = net_h
-            row.hours_100, row.hours_125, row.hours_150 = _split_overtime(net_h)
+            if net_h <= 0:
+                raise TransformationError(
+                    f"Variation produced non-positive net hours for row {row.date}: {net_h}"
+                )
+
+            h100, h125, h150 = _split_overtime(
+                net_h, rules.regular_threshold_hours, rules.ot_125_hours
+            )
 
             # Assign fallback location when OCR did not extract one
-            if not row.location:
-                row.location = random.choice(_DEFAULT_LOCATIONS)
+            location = row.location or rng.choice(_DEFAULT_LOCATIONS)
 
-            # Recalculate weekday
-            row.weekday = _HEB_WEEKDAYS.get(row.date.weekday(), "")
-            row.is_sabbath = row.date.weekday() == 5
+            # Build a new immutable row — the original is never modified
+            new_rows.append(dataclasses.replace(
+                row,
+                entry_time=new_entry,
+                exit_time=new_exit,
+                break_time=new_break_time,
+                total_hours=net_h,
+                hours_100=h100,
+                hours_125=h125,
+                hours_150=h150,
+                location=location,
+                # Recalculate weekday from the actual date (fixes OCR errors)
+                weekday=_HEB_WEEKDAYS.get(row.date.weekday(), ""),
+                is_sabbath=row.date.weekday() == 5,
+            ))
 
-            new_rows.append(row)
-
-        result.rows = new_rows
-
-        # Recalculate summary
-        header: TypeBHeader = result.header  # type: ignore[assignment]
-        header.work_days = sum(1 for r in new_rows if not r.is_sabbath)
-        header.total_hours = round(sum(r.total_hours for r in new_rows), 2)
-        header.hours_100 = round(sum(r.hours_100 for r in new_rows), 2)
-        header.hours_125 = round(sum(r.hours_125 for r in new_rows), 2)
-        header.hours_150 = round(sum(r.hours_150 for r in new_rows), 2)
-
-        return result
+        # Recalculate summary header
+        old_header: TypeBHeader = data.header  # type: ignore[assignment]
+        new_header = dataclasses.replace(
+            old_header,
+            work_days=sum(1 for r in new_rows if not r.is_sabbath),
+            total_hours=round(sum(r.total_hours for r in new_rows), 2),
+            hours_100=round(sum(r.hours_100 for r in new_rows), 2),
+            hours_125=round(sum(r.hours_125 for r in new_rows), 2),
+            hours_150=round(sum(r.hours_150 for r in new_rows), 2),
+        )
+        return dataclasses.replace(data, header=new_header, rows=tuple(new_rows))

@@ -1,6 +1,7 @@
 """Parser for Type B attendance reports (דוח נוכחות מפורט עם שעות נוספות)."""
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 from datetime import date, time
@@ -9,6 +10,7 @@ from src.constants import DATE_RE as _DATE_RE, FLOAT_RE as _FLOAT_RE
 from src.constants import HEB_MONTHS as _HEB_MONTHS, HEB_WEEKDAY_NAMES as _WEEKDAYS
 from src.constants import TIME_RE as _TIME_RE
 from src.domain.enums import ReportType
+from src.domain.exceptions import ParseError
 from src.domain.models import AttendanceRow, ReportData, TypeBHeader
 from src.services.parsing.base_parser import BaseParser
 
@@ -45,53 +47,76 @@ class TypeBParser(BaseParser):
     """Parses Type B report text into ReportData."""
 
     def parse(self, text: str, source_filename: str = "") -> ReportData:
+        if not text or not text.strip():
+            raise ParseError("Empty text provided to TypeBParser.")
+
         header = self._parse_header(text)
         rows = self._parse_rows(text)
 
-        if not header.month_label and rows:
+        # Derive missing header fields without mutating the frozen object
+        month_label = header.month_label
+        if not month_label and rows:
             first_date = next((r.date for r in rows if r.date), None)
             if first_date:
-                header.month_label = f"{_HEB_MONTHS.get(first_date.month, '')} {first_date.year}"
+                month_label = f"{_HEB_MONTHS.get(first_date.month, '')} {first_date.year}"
 
-        if header.work_days == 0:
-            header.work_days = sum(1 for r in rows if r.date and not r.is_sabbath)
-        if header.total_hours == 0.0:
-            header.total_hours = round(sum(r.total_hours for r in rows), 2)
-        if header.hours_100 == 0.0:
-            header.hours_100 = round(sum(r.hours_100 for r in rows), 2)
-        if header.hours_125 == 0.0:
-            header.hours_125 = round(sum(r.hours_125 for r in rows), 2)
-        if header.hours_150 == 0.0:
-            header.hours_150 = round(sum(r.hours_150 for r in rows), 2)
+        work_days = header.work_days or sum(1 for r in rows if r.date and not r.is_sabbath)
+        total_hours = header.total_hours or round(sum(r.total_hours for r in rows), 2)
+        hours_100 = header.hours_100 or round(sum(r.hours_100 for r in rows), 2)
+        hours_125 = header.hours_125 or round(sum(r.hours_125 for r in rows), 2)
+        hours_150 = header.hours_150 or round(sum(r.hours_150 for r in rows), 2)
+
+        header = dataclasses.replace(
+            header,
+            month_label=month_label,
+            work_days=work_days,
+            total_hours=total_hours,
+            hours_100=hours_100,
+            hours_125=hours_125,
+            hours_150=hours_150,
+        )
 
         return ReportData(
             report_type=ReportType.TYPE_B,
             header=header,
-            rows=rows,
+            rows=tuple(rows),
             source_filename=source_filename,
         )
 
     def _parse_header(self, text: str) -> TypeBHeader:
-        h = TypeBHeader()
+        company = "נ.ע. הנשר בע\"מ"
+        work_days = 0
+        total_hours = 0.0
+        hours_100 = 0.0
+        hours_125 = 0.0
+        hours_150 = 0.0
+
         m = _COMPANY_RE.search(text)
         if m:
-            h.company = m.group(1).strip()
+            company = m.group(1).strip()
         m = _DAYS_RE.search(text)
         if m:
-            h.work_days = int(m.group(1))
+            work_days = int(m.group(1))
         m = _TOTAL_HRS_RE.search(text)
         if m:
-            h.total_hours = float(m.group(1))
+            total_hours = float(m.group(1))
         m = _HRS100_RE.search(text)
         if m:
-            h.hours_100 = float(m.group(1))
+            hours_100 = float(m.group(1))
         m = _HRS125_RE.search(text)
         if m:
-            h.hours_125 = float(m.group(1))
+            hours_125 = float(m.group(1))
         m = _HRS150_RE.search(text)
         if m:
-            h.hours_150 = float(m.group(1))
-        return h
+            hours_150 = float(m.group(1))
+        return TypeBHeader(
+            company=company,
+            work_days=work_days,
+            total_hours=total_hours,
+            hours_100=hours_100,
+            hours_125=hours_125,
+            hours_150=hours_150,
+        )
 
     def _parse_rows(self, text: str) -> list[AttendanceRow]:
         rows: list[AttendanceRow] = []

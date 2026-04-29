@@ -8,7 +8,10 @@ from datetime import date, time
 from src.constants import DATE_RE as _DATE_RE, FLOAT_RE as _FLOAT_RE
 from src.constants import HEB_MONTHS as _HEB_MONTHS, HEB_WEEKDAY_NAMES as _WEEKDAYS
 from src.constants import TIME_RE as _TIME_RE
+import dataclasses
+
 from src.domain.enums import ReportType
+from src.domain.exceptions import ParseError
 from src.domain.models import AttendanceRow, ReportData, TypeAHeader
 from src.services.parsing.base_parser import BaseParser
 
@@ -41,53 +44,70 @@ class TypeAParser(BaseParser):
     """Parses Type A report text into ReportData."""
 
     def parse(self, text: str, source_filename: str = "") -> ReportData:
+        if not text or not text.strip():
+            raise ParseError("Empty text provided to TypeAParser.")
+
         header = self._parse_header(text)
         rows = self._parse_rows(text)
 
-        # If we got rows but header has no month label, derive it from first valid date
-        if not header.month_label and rows:
+        # Derive missing header fields without mutating the frozen object
+        month_label = header.month_label
+        if not month_label and rows:
             first_date = next((r.date for r in rows if r.date), None)
             if first_date:
-                header.month_label = f"{_HEB_MONTHS.get(first_date.month, '')} {first_date.year}"
+                month_label = f"{_HEB_MONTHS.get(first_date.month, '')} {first_date.year}"
 
-        # If header fields are zero, derive from rows
-        if header.work_days == 0:
-            header.work_days = sum(1 for r in rows if r.date)
-        if header.total_hours == 0.0:
-            header.total_hours = round(sum(r.total_hours for r in rows), 2)
+        work_days = header.work_days or sum(1 for r in rows if r.date)
+        total_hours = header.total_hours or round(sum(r.total_hours for r in rows), 2)
+
+        header = dataclasses.replace(
+            header,
+            month_label=month_label,
+            work_days=work_days,
+            total_hours=total_hours,
+        )
 
         return ReportData(
             report_type=ReportType.TYPE_A,
             header=header,
-            rows=rows,
+            rows=tuple(rows),
             source_filename=source_filename,
         )
 
     # ------------------------------------------------------------------
     def _parse_header(self, text: str) -> TypeAHeader:
-        h = TypeAHeader()
+        work_days = 0
+        total_hours = 0.0
+        hourly_rate = 0.0
+        total_pay = 0.0
+
         m = _WORK_DAYS_RE.search(text)
         if m:
-            h.work_days = int(m.group(1))
+            work_days = int(m.group(1))
         m = _TOTAL_HRS_RE.search(text)
         if m:
             try:
-                h.total_hours = float(m.group(1))
+                total_hours = float(m.group(1))
             except ValueError:
                 pass
         m = _HOURLY_RATE_RE.search(text)
         if m:
             try:
-                h.hourly_rate = float(m.group(1))
+                hourly_rate = float(m.group(1))
             except ValueError:
                 pass
         m = _TOTAL_PAY_RE.search(text)
         if m:
             try:
-                h.total_pay = float(m.group(1))
+                total_pay = float(m.group(1))
             except ValueError:
                 pass
-        return h
+        return TypeAHeader(
+            work_days=work_days,
+            total_hours=total_hours,
+            hourly_rate=hourly_rate,
+            total_pay=total_pay,
+        )
 
     def _parse_rows(self, text: str) -> list[AttendanceRow]:
         rows: list[AttendanceRow] = []

@@ -5,11 +5,12 @@ from src.domain.enums import ReportType
 from src.services.variation.base_variator import BaseVariator
 from src.services.variation.type_a_variator import TypeAVariator
 from src.services.variation.type_b_variator import TypeBVariator
+from src.services.variation.validating_decorator import ValidatingVariatorDecorator
 
 
 _REGISTRY: dict[ReportType, BaseVariator] = {
-    ReportType.TYPE_A: TypeAVariator(),
-    ReportType.TYPE_B: TypeBVariator(),
+    ReportType.TYPE_A: ValidatingVariatorDecorator(TypeAVariator()),
+    ReportType.TYPE_B: ValidatingVariatorDecorator(TypeBVariator()),
 }
 
 
