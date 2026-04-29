@@ -17,13 +17,13 @@ class AttendanceRow:
     entry_time: Optional[time] = None
     exit_time: Optional[time] = None
     break_time: Optional[time] = None   # Type B only
-    location: str = ""          # Type B only (מקום ע"נ)
+    location: Optional[str] = None      # Type B only (מקום ע"נ)
     total_hours: float = 0.0
-    hours_100: float = 0.0      # Type B: regular hours
-    hours_125: float = 0.0      # Type B: overtime 125%
-    hours_150: float = 0.0      # Type B: overtime 150%
-    notes: str = ""             # Type A only
-    is_sabbath: bool = False    # Type B: Saturday flag
+    hours_100: Optional[float] = None   # Type B: regular hours
+    hours_125: Optional[float] = None   # Type B: overtime 125%
+    hours_150: Optional[float] = None   # Type B: overtime 150%
+    notes: Optional[str] = None         # Type A only
+    is_sabbath: Optional[bool] = None   # Type B: Saturday flag
 
 
 @dataclass(frozen=True)

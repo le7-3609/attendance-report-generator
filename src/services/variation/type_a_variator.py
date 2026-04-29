@@ -5,12 +5,15 @@ import dataclasses
 import logging
 import random
 from datetime import datetime, time, timedelta
+from collections.abc import Sequence
+import time as _time
 
 from src.config.rules import TYPE_A_RULES, TypeAVariationRules
 from src.constants import HEB_WEEKDAYS as _HEB_WEEKDAYS
 from src.domain.exceptions import TransformationError
 from src.domain.models import AttendanceRow, ReportData, TypeAHeader
 from src.services.variation.base_variator import BaseVariator
+from src.services.variation.base_strategy import BaseTransformationStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -36,86 +39,75 @@ def _hours_between(t1: time, t2: time) -> float:
     return round((dt2 - dt1).total_seconds() / 3600, 2)
 
 
-class TypeAVariator(BaseVariator):
+class TypeAVariator(BaseVariator, BaseTransformationStrategy):
     """Applies realistic random variations to a Type A report."""
 
     def __init__(self, rules: TypeAVariationRules = TYPE_A_RULES) -> None:
         self._rules = rules
+        # Per-run salt so outputs differ between runs (even for same input).
+        self._run_salt = _time.time_ns() ^ random.getrandbits(32)
 
-    def vary(self, data: ReportData) -> ReportData:
+    def transform_row(self, row: AttendanceRow) -> AttendanceRow:
+        if row.date is None:
+            return row
+
         rules = self._rules
-        new_rows: list[AttendanceRow] = []
 
-        for row in data.rows:
-            if row.date is None:
-                continue
+        d = row.date
+        rng = random.Random(self._run_salt ^ (d.year * 10000 + d.month * 100 + d.day) ^ random.getrandbits(16))
 
-            # Per-row deterministic RNG — seeded from the row's date so the
-            # same input always produces the same output, independent of call order.
-            d = row.date
-            rng = random.Random(d.year * 10000 + d.month * 100 + d.day)
+        entry_time = row.entry_time
+        exit_time = row.exit_time
 
-            entry_time = row.entry_time
-            exit_time = row.exit_time
+        if entry_time is None or exit_time is None:
+            logger.debug("Synthesising times for incomplete row (date=%s).", row.date)
+            entry_time = _clamp_time(time(8, rng.randint(0, 30)), rules.min_entry, rules.max_entry)
+            exit_time = _add_minutes(entry_time, int(rules.min_shift_hours * 60))
 
-            # If OCR failed to extract times, synthesise plausible ones
-            if entry_time is None or exit_time is None:
-                logger.debug("Synthesising times for incomplete row (date=%s).", row.date)
-                entry_time = _clamp_time(
-                    time(8, rng.randint(0, 30)), rules.min_entry, rules.max_entry
-                )
-                exit_time = _add_minutes(entry_time, int(rules.min_shift_hours * 60))
+        original_duration_h = _hours_between(entry_time, exit_time)
 
-            original_duration_h = _hours_between(entry_time, exit_time)
+        delta_entry = rng.randint(-rules.entry_delta_minutes, rules.entry_delta_minutes)
+        new_entry = _clamp_time(_add_minutes(entry_time, delta_entry), rules.min_entry, rules.max_entry)
 
-            # Adjust entry time
-            delta_entry = rng.randint(-rules.entry_delta_minutes, rules.entry_delta_minutes)
-            new_entry = _clamp_time(_add_minutes(entry_time, delta_entry), rules.min_entry, rules.max_entry)
+        target_duration_h = max(
+            rules.min_shift_hours,
+            min(rules.max_shift_hours, original_duration_h + rng.uniform(-0.25, 0.25)),
+        )
+        delta_exit = rng.randint(-rules.exit_delta_minutes, rules.exit_delta_minutes)
+        raw_exit = _add_minutes(new_entry, int(target_duration_h * 60) + delta_exit)
 
-            # Adjust shift duration within valid range
-            target_duration_h = max(
-                rules.min_shift_hours,
-                min(rules.max_shift_hours, original_duration_h + rng.uniform(-0.25, 0.25)),
+        actual_h = _hours_between(new_entry, raw_exit)
+        if actual_h < rules.min_shift_hours:
+            raw_exit = _add_minutes(new_entry, int(rules.min_shift_hours * 60))
+        elif actual_h > rules.max_shift_hours:
+            raw_exit = _add_minutes(new_entry, int(rules.max_shift_hours * 60))
+
+        new_total_hours = _hours_between(new_entry, raw_exit)
+        if new_total_hours <= 0:
+            raise TransformationError(
+                f"Variation produced non-positive hours for row {row.date}: {new_total_hours}"
             )
-            delta_exit = rng.randint(-rules.exit_delta_minutes, rules.exit_delta_minutes)
-            raw_exit = _add_minutes(new_entry, int(target_duration_h * 60) + delta_exit)
 
-            # Enforce exit > entry and total hours within valid range
-            actual_h = _hours_between(new_entry, raw_exit)
-            if actual_h < rules.min_shift_hours:
-                raw_exit = _add_minutes(new_entry, int(rules.min_shift_hours * 60))
-            elif actual_h > rules.max_shift_hours:
-                raw_exit = _add_minutes(new_entry, int(rules.max_shift_hours * 60))
+        return dataclasses.replace(
+            row,
+            entry_time=new_entry,
+            exit_time=raw_exit,
+            total_hours=new_total_hours,
+            weekday=_HEB_WEEKDAYS.get(row.date.weekday(), ""),
+        )
 
-            new_total_hours = _hours_between(new_entry, raw_exit)
-            if new_total_hours <= 0:
-                raise TransformationError(
-                    f"Variation produced non-positive hours for row {row.date}: {new_total_hours}"
-                )
+    def finalize(self, data: ReportData, rows: Sequence[AttendanceRow]) -> ReportData:
+        rules = self._rules
+        new_rows = [r for r in rows if r.date is not None]
 
-            # Build a new immutable row — the original is never modified
-            new_rows.append(dataclasses.replace(
-                row,
-                entry_time=new_entry,
-                exit_time=raw_exit,
-                total_hours=new_total_hours,
-                # Recalculate weekday from the actual date (fixes OCR errors)
-                weekday=_HEB_WEEKDAYS.get(row.date.weekday(), ""),
-            ))
-
-        # Recalculate header totals
         old_header: TypeAHeader = data.header  # type: ignore[assignment]
         total_hours = round(sum(r.total_hours for r in new_rows), 2)
 
-        # If OCR did not extract an hourly rate, synthesise a plausible one.
-        # Seed from month_label so the fallback is also deterministic.
         if old_header.hourly_rate:
             hourly_rate = old_header.hourly_rate
         else:
-            rate_rng = random.Random(hash(old_header.month_label) & 0xFFFFFFFF)
-            hourly_rate = round(
-                rate_rng.uniform(rules.fallback_rate_min, rules.fallback_rate_max), 2
-            )
+            rate_rng = random.Random(self._run_salt ^ (hash(old_header.month_label) & 0xFFFFFFFF))
+            hourly_rate = round(rate_rng.uniform(rules.fallback_rate_min, rules.fallback_rate_max), 2)
 
         new_header = dataclasses.replace(
             old_header,
@@ -125,3 +117,13 @@ class TypeAVariator(BaseVariator):
             total_pay=round(total_hours * hourly_rate, 2),
         )
         return dataclasses.replace(data, header=new_header, rows=tuple(new_rows))
+
+    def vary(self, data: ReportData) -> ReportData:
+        # Backwards-compatible entry-point for older callers.
+        out = []
+        for row in data.rows:
+            try:
+                out.append(self.transform_row(row))
+            except TransformationError:
+                out.append(row)
+        return self.finalize(data, out)

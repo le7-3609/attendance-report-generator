@@ -16,7 +16,7 @@ from src.services.extraction.pipeline import ExtractionPipeline
 from src.services.parsing.registry import get_parser
 from src.services.pdf_service import PdfService
 from src.services.rendering.registry import get_renderer
-from src.services.variation.registry import get_variator
+from src.services.variation.registry import get_transformation_service
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +75,8 @@ def process_pdf(
         report_data = parser.parse(text, source_filename=pdf_path.name)
         logger.info("Parsed %d attendance rows.", len(report_data.rows))
 
-        # 5. Vary
-        variator = get_variator(report_type)
-        varied_data = variator.vary(report_data)
+        # 5. Transform (variation) via Strategy registry + validation decorator
+        varied_data = get_transformation_service().transform(report_data)
         logger.info("Variation complete — %d rows in output.", len(varied_data.rows))
 
         # 6. Render HTML

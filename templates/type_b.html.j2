@@ -128,14 +128,14 @@
       <tr{% if row.is_sabbath %} class="sabbath"{% endif %}>
         <td>{{ row.date.strftime("%d/%m/%Y") if row.date else "" }}</td>
         <td>{{ row.weekday }}</td>
-        <td>{{ row.location }}</td>
+        <td>{{ row.location or "" }}</td>
         <td>{{ row.entry_time.strftime("%H:%M") if row.entry_time else "" }}</td>
         <td>{{ row.exit_time.strftime("%H:%M") if row.exit_time else "" }}</td>
         <td>{{ row.break_time.strftime("%H:%M") if row.break_time else "00:00" }}</td>
         <td>{{ "%.2f"|format(row.total_hours) }}</td>
-        <td>{{ "%.2f"|format(row.hours_100) }}</td>
-        <td>{{ "%.2f"|format(row.hours_125) }}</td>
-        <td>{{ "%.2f"|format(row.hours_150) }}</td>
+        <td>{{ "%.2f"|format(row.hours_100 or 0.0) }}</td>
+        <td>{{ "%.2f"|format(row.hours_125 or 0.0) }}</td>
+        <td>{{ "%.2f"|format(row.hours_150 or 0.0) }}</td>
       </tr>
       {% endfor %}
     </tbody>
