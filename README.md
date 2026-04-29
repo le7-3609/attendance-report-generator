@@ -8,9 +8,9 @@ Upload a scanned PDF or image — get a new PDF with slightly different times an
 ## How it works
 
 ```
-PDF / Image ►► Extract text ►► Classify type ►► Parse ►► Vary ►► Render HTML ►► PDF
-              (pdfplumber       (A or B)        (structure   (random    (Jinja2      (ReportLab)
-               ► OCR fallback)                  → models)    rules)
+PDF / Image ►► Extract text ►► Classify type ►► Parse ►► Transform ►► Render HTML ►► PDF
+              (pdfplumber       (A or B)        (structure   (strategy + (Jinja2      (ReportLab)
+               ► OCR fallback)                  → models)    validation)
 ```
 
 ### Report types
@@ -37,6 +37,22 @@ PDF / Image ►► Extract text ►► Classify type ►► Parse ►► Vary �
 - Overtime split: 0–8 h → 100%, 8–10 h → 125%, >10 h → 150%
 - Location filled from OCR; falls back to a plausible city when missing
 - Summary totals recalculated from rows
+
+### Validation and safe fallback
+
+After the strategy produces a converted row/report, a validation decorator audits invariants
+(entry/exit consistency, total-hours sanity, overtime tiers summing correctly, etc.).
+
+If validation fails for a row, the transformation layer **keeps the original row** and continues,
+so a single bad OCR line does not break the whole output.
+
+### OCR hour normalization (base-60 minutes)
+
+Some reports (and OCR output) encode durations like `7.30` meaning **7 hours 30 minutes**
+(not 7.30 decimal hours). The parsers normalize hour tokens using a base‑60 minutes rule:
+
+- `7.30` → `7.50`
+- `7.70` (7h70m) → `8.17`
 
 ---
 
@@ -162,17 +178,11 @@ python -m src.main your_report.pdf --verbose 2>&1 | findstr "Extracted"
 
 ### 3. Variation rules do not match your business rules
 
-Open `src/services/variation/type_a_variator.py` or `type_b_variator.py`.
+Most numeric rules are centralized in `src/config/rules.py` as frozen dataclasses.
+Edit the relevant values there:
 
-Key constants you can tune:
-
-| Constant | File | Effect |
-|---|---|---|
-| `_ENTRY_DELTA_MINUTES` | both | Maximum random shift on entry time |
-| `_EXIT_DELTA_MINUTES` | type_b | Maximum random shift on exit time |
-| `_REGULAR_THRESHOLD` | type_b | Hours before overtime kicks in (default 8) |
-| `_OT_125_HOURS` | type_b | Hours in the 125% band (default 2) |
-| `_MIN_SHIFT_H` / `_MAX_SHIFT_H` | both | Clamp on total shift duration |
+- `TypeAVariationRules`: entry window, shift duration clamp, deltas, fallback hourly rate range
+- `TypeBVariationRules`: deltas, break bounds, overtime thresholds, long-shift probability/range
 
 ### 4. The output HTML/PDF looks wrong
 
@@ -185,8 +195,8 @@ Jinja2 syntax. The `header` and `rows` variables match the fields in `src/domain
 
 1. Add a new value to `src/domain/enums.py` → `ReportType`
 2. Add keyword signals in `src/services/classification/classifier.py`
-3. Create `src/services/parsing/type_c_parser.py` (extend `BaseParser`)
-4. Create `src/services/variation/type_c_variator.py` (extend `BaseVariator`)
+3. Create `src/services/parsing/type_c_parser.py` (extend `BaseParser` and override `_parse_summary()`, `_parse_row()`, `_is_header_line()`)
+4. Create `src/services/variation/type_c_variator.py` (implement the strategy interface; existing variators also implement `BaseVariator` for compatibility)
 5. Create `src/services/rendering/type_c_renderer.py` + `templates/type_c.html.j2`
 6. Register all three in their respective `registry.py` files
 
