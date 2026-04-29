@@ -200,3 +200,9 @@ No other changes are needed.
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
