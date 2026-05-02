@@ -218,16 +218,16 @@ class TestIntegrationTypeB:
 
 class TestSeedReproducibility:
     def test_type_a_same_input_gives_same_result(self):
-        """Per-row seeding from date means same input → same output, always."""
+        """Same run_salt + same input → same output."""
         data = _make_type_a_data()
-        r1 = TypeAVariator().vary(data)
-        r2 = TypeAVariator().vary(data)
+        r1 = TypeAVariator(run_salt=42).vary(data)
+        r2 = TypeAVariator(run_salt=42).vary(data)
         assert r1.rows[0].entry_time == r2.rows[0].entry_time
         assert r1.rows[0].exit_time == r2.rows[0].exit_time
 
     def test_type_b_same_input_gives_same_result(self):
         data = _make_type_b_data()
-        r1 = TypeBVariator().vary(data)
-        r2 = TypeBVariator().vary(data)
+        r1 = TypeBVariator(run_salt=42).vary(data)
+        r2 = TypeBVariator(run_salt=42).vary(data)
         assert r1.rows[0].entry_time == r2.rows[0].entry_time
         assert r1.rows[0].exit_time == r2.rows[0].exit_time

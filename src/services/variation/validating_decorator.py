@@ -6,53 +6,31 @@ assume ReportData is internally consistent.
 """
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
-
 from src.domain.enums import ReportType
 from src.domain.exceptions import TransformationError
 from src.domain.models import AttendanceRow, ReportData, TypeAHeader, TypeBHeader
-from src.services.variation.base_variator import BaseVariator
 from src.services.variation.base_strategy import BaseTransformationStrategy
+from src.services.variation.time_utils import hours_between
 
 
-def _hours_between(t1: time, t2: time) -> float:
-    """Hours between times; supports crossing midnight."""
-    dt1 = datetime(2000, 1, 1, t1.hour, t1.minute)
-    dt2 = datetime(2000, 1, 1, t2.hour, t2.minute)
-    if dt2 <= dt1:
-        dt2 += timedelta(days=1)
-    return round((dt2 - dt1).total_seconds() / 3600, 2)
-
-
-class ValidatingVariatorDecorator(BaseVariator, BaseTransformationStrategy):
-    """Wraps a strategy/variator and audits its output for consistency."""
+class ValidatingVariatorDecorator(BaseTransformationStrategy):
+    """Wraps a strategy and audits its output for consistency."""
 
     def __init__(
         self,
-        inner: BaseVariator | BaseTransformationStrategy,
+        inner: BaseTransformationStrategy,
         *,
         max_hours_error: float = 0.03,
     ) -> None:
         self._inner = inner
         self._max_hours_error = max_hours_error
 
-    def vary(self, data: ReportData) -> ReportData:
-        if not isinstance(self._inner, BaseVariator):
-            raise TypeError("Inner object does not implement BaseVariator.")
-        out = self._inner.vary(data)
-        self._audit(out)
-        return out
-
     def transform_row(self, row: AttendanceRow) -> AttendanceRow:
-        if not isinstance(self._inner, BaseTransformationStrategy):
-            raise TypeError("Inner object does not implement BaseTransformationStrategy.")
         out = self._inner.transform_row(row)
         self._audit_row(-1, out)
         return out
 
     def finalize(self, data: ReportData, rows: list[AttendanceRow] | tuple[AttendanceRow, ...]) -> ReportData:
-        if not isinstance(self._inner, BaseTransformationStrategy):
-            raise TypeError("Inner object does not implement BaseTransformationStrategy.")
         out = self._inner.finalize(data, rows)
         self._audit(out)
         return out
@@ -87,7 +65,7 @@ class ValidatingVariatorDecorator(BaseVariator, BaseTransformationStrategy):
                 f"Validation failed: row[{idx}] exit_time equals entry_time."
             )
 
-        expected_total = _hours_between(row.entry_time, row.exit_time)
+        expected_total = hours_between(row.entry_time, row.exit_time)
 
         is_type_bish = (
             row.break_time is not None
@@ -124,7 +102,6 @@ class ValidatingVariatorDecorator(BaseVariator, BaseTransformationStrategy):
                     f"(tiers={tier_sum:.2f}, total={row.total_hours:.2f})."
                 )
 
-            # Optional but useful: sabbath flag must match the date.
             if bool(row.is_sabbath) != (row.date.weekday() == 5):
                 raise TransformationError(
                     f"Validation failed: row[{idx}] is_sabbath inconsistent with date."
@@ -177,4 +154,3 @@ class ValidatingVariatorDecorator(BaseVariator, BaseTransformationStrategy):
                 "Validation failed: Type B header work_days mismatch "
                 f"(got={header.work_days}, expected={expected_work_days})."
             )
-

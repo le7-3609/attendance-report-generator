@@ -9,12 +9,6 @@ from src.services.extraction.text_extractor import TextExtractor
 
 logger = logging.getLogger(__name__)
 
-# Default threshold: if native extraction yields fewer characters than this,
-# treat the PDF as image-based and fall back to OCR.
-# Can be overridden per-instance or via the ATTENDANCE_MIN_TEXT_LENGTH env var.
-_DEFAULT_MIN_TEXT_LENGTH = int(os.environ.get("ATTENDANCE_MIN_TEXT_LENGTH", "50"))
-
-
 class ExtractionPipeline:
     """Extracts text from any PDF — text-based or scanned."""
 
@@ -22,8 +16,10 @@ class ExtractionPipeline:
         self,
         ocr_dpi: int = 300,
         ocr_lang: str = "heb+eng",
-        min_text_length: int = _DEFAULT_MIN_TEXT_LENGTH,
+        min_text_length: int | None = None,
     ):
+        if min_text_length is None:
+            min_text_length = int(os.environ.get("ATTENDANCE_MIN_TEXT_LENGTH", "50"))
         self._text = TextExtractor()
         self._ocr = OcrExtractor(dpi=ocr_dpi, lang=ocr_lang)
         self._min_text_length = min_text_length

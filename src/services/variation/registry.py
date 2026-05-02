@@ -9,10 +9,13 @@ from src.services.variation.transformation_service import TransformationService
 from src.services.variation.base_strategy import BaseTransformationStrategy
 from src.services.variation.base_variator import BaseVariator
 
+_INNER: dict[ReportType, BaseVariator] = {
+    ReportType.TYPE_A: TypeAVariator(),
+    ReportType.TYPE_B: TypeBVariator(),
+}
 
 _REGISTRY: dict[ReportType, BaseTransformationStrategy] = {
-    ReportType.TYPE_A: ValidatingVariatorDecorator(TypeAVariator()),
-    ReportType.TYPE_B: ValidatingVariatorDecorator(TypeBVariator()),
+    rt: ValidatingVariatorDecorator(inner) for rt, inner in _INNER.items()
 }
 
 
@@ -32,7 +35,7 @@ def get_variator(report_type: ReportType) -> BaseVariator:
 
     Prefer `get_transformation_service().transform(data)` for the new pipeline.
     """
-    strategy = get_strategy(report_type)
-    if not isinstance(strategy, BaseVariator):
-        raise TypeError(f"Registered strategy for {report_type} does not implement BaseVariator.")
-    return strategy
+    variator = _INNER.get(report_type)
+    if variator is None:
+        raise ValueError(f"No variator registered for report type: {report_type}")
+    return variator
