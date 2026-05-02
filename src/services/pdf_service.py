@@ -87,8 +87,8 @@ def _fmt_time(t) -> str:
     return t.strftime("%H:%M") if t else ""
 
 
-def _fmt_f(v: float) -> str:
-    return f"{v:.2f}" if v else ""
+def _fmt_f(v: float | None) -> str:
+    return f"{v:.2f}" if v is not None else ""
 
 
 class PdfService:
@@ -153,7 +153,7 @@ class PdfService:
         rows_data = [[_h(h) for h in hdrs]]
         for row in data.rows:
             rows_data.append([
-                _h(row.notes),
+                _h(row.notes or ""),
                 _fmt_f(row.total_hours),
                 _fmt_time(row.exit_time),
                 _fmt_time(row.entry_time),
@@ -215,7 +215,7 @@ class PdfService:
                 _fmt_time(row.break_time),
                 _fmt_time(row.exit_time),
                 _fmt_time(row.entry_time),
-                _h(row.location),
+                _h(row.location or ""),
                 _h(row.weekday),
                 row.date.strftime("%d/%m/%Y") if row.date else "",
             ])
@@ -225,7 +225,7 @@ class PdfService:
             "", "", "", "", _h('סה"כ'), "",
         ])
 
-        sabbath_idxs = [i + 1 for i, row in enumerate(data.rows) if row.is_sabbath]
+        sabbath_idxs = [i + 1 for i, row in enumerate(data.rows) if bool(row.is_sabbath)]
         n = len(rows_data)
         tbl = Table(rows_data, colWidths=cws, repeatRows=1)
         style_cmds = [

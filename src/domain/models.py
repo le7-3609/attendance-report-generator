@@ -8,7 +8,7 @@ from typing import Optional
 from src.domain.enums import ReportType
 
 
-@dataclass
+@dataclass(frozen=True)
 class AttendanceRow:
     """A single day row in an attendance report."""
 
@@ -17,16 +17,16 @@ class AttendanceRow:
     entry_time: Optional[time] = None
     exit_time: Optional[time] = None
     break_time: Optional[time] = None   # Type B only
-    location: str = ""          # Type B only (מקום ע"נ)
+    location: Optional[str] = None      # Type B only (מקום ע"נ)
     total_hours: float = 0.0
-    hours_100: float = 0.0      # Type B: regular hours
-    hours_125: float = 0.0      # Type B: overtime 125%
-    hours_150: float = 0.0      # Type B: overtime 150%
-    notes: str = ""             # Type A only
-    is_sabbath: bool = False    # Type B: Saturday flag
+    hours_100: Optional[float] = None   # Type B: regular hours
+    hours_125: Optional[float] = None   # Type B: overtime 125%
+    hours_150: Optional[float] = None   # Type B: overtime 150%
+    notes: Optional[str] = None         # Type A only
+    is_sabbath: Optional[bool] = None   # Type B: Saturday flag
 
 
-@dataclass
+@dataclass(frozen=True)
 class TypeAHeader:
     """Summary fields for a Type A report."""
 
@@ -37,7 +37,7 @@ class TypeAHeader:
     month_label: str = ""       # e.g. "ינואר 2023"
 
 
-@dataclass
+@dataclass(frozen=True)
 class TypeBHeader:
     """Summary fields for a Type B report."""
 
@@ -53,11 +53,11 @@ class TypeBHeader:
     travel: float = 0.0
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReportData:
     """Full, typed report ready for variation and rendering."""
 
     report_type: ReportType
     header: TypeAHeader | TypeBHeader
-    rows: list[AttendanceRow] = field(default_factory=list)
+    rows: tuple[AttendanceRow, ...] = field(default_factory=tuple)
     source_filename: str = ""

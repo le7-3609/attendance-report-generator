@@ -1,22 +1,33 @@
 """Abstract base variator."""
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
+from src.domain.exceptions import TransformationError
 from src.domain.models import ReportData
+from src.services.variation.base_strategy import BaseTransformationStrategy
 
 
-class BaseVariator(ABC):
+class BaseVariator(BaseTransformationStrategy):
+    """Extends BaseTransformationStrategy with a concrete vary() entry-point.
+
+    Subclasses implement transform_row() and finalize(); the loop with
+    safe per-row fallback lives here once.
+    """
+
+    def vary(self, data: ReportData) -> ReportData:
+        out = []
+        for row in data.rows:
+            try:
+                out.append(self.transform_row(row))
+            except TransformationError:
+                out.append(row)
+        return self.finalize(data, out)
 
     @abstractmethod
-    def vary(self, data: ReportData, *, seed: int | None = None) -> ReportData:
-        """Apply realistic variations to *data* and return new ReportData.
+    def transform_row(self, row):  # type: ignore[override]
+        ...
 
-        Parameters
-        ----------
-        data:
-            The parsed report to vary.
-        seed:
-            Optional RNG seed for reproducible output.  Pass the same seed
-            with the same input to get identical variations every time.
-        """
+    @abstractmethod
+    def finalize(self, data, rows):  # type: ignore[override]
+        ...

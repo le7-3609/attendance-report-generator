@@ -8,7 +8,16 @@ from jinja2 import Environment, FileSystemLoader
 from src.domain.models import ReportData
 from src.services.rendering.base_renderer import BaseRenderer
 
-_TEMPLATES_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+_PKG_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
+_REPO_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "templates"
+
+
+def _templates_dir() -> Path:
+    # Prefer packaged templates (works after `pip install .`).
+    if _PKG_TEMPLATES_DIR.exists():
+        return _PKG_TEMPLATES_DIR
+    # Fallback for editable/dev runs from the repo root.
+    return _REPO_TEMPLATES_DIR
 
 
 class TypeARenderer(BaseRenderer):
@@ -20,7 +29,7 @@ class TypeARenderer(BaseRenderer):
 
     def __init__(self, template_name: str = "type_a.html.j2") -> None:
         self._env = Environment(
-            loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+            loader=FileSystemLoader(str(_templates_dir())),
             autoescape=True,
         )
         self._template_name = template_name

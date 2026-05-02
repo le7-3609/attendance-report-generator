@@ -58,7 +58,7 @@ def _make_type_a_data() -> ReportData:
     header = TypeAHeader(
         work_days=2, total_hours=5.98, hourly_rate=32.0, total_pay=191.36
     )
-    return ReportData(report_type=ReportType.TYPE_A, header=header, rows=rows)
+    return ReportData(report_type=ReportType.TYPE_A, header=header, rows=tuple(rows))
 
 
 class TestTypeAVariator:
@@ -113,7 +113,7 @@ def _make_type_b_data() -> ReportData:
         ),
     ]
     header = TypeBHeader(work_days=1, total_hours=15.75, hours_100=8.0, hours_125=1.0, hours_150=6.75)
-    return ReportData(report_type=ReportType.TYPE_B, header=header, rows=rows)
+    return ReportData(report_type=ReportType.TYPE_B, header=header, rows=tuple(rows))
 
 
 class TestTypeBVariator:
@@ -179,7 +179,7 @@ class TestIntegrationTypeA:
 
     def test_vary_render_produces_html(self):
         data = _make_type_a_data()
-        varied = TypeAVariator().vary(data, seed=42)
+        varied = TypeAVariator().vary(data)
         html = TypeARenderer().render(varied)
         assert isinstance(html, str)
         assert len(html) > 100
@@ -187,7 +187,7 @@ class TestIntegrationTypeA:
     def test_vary_then_pdf_bytes(self):
         from src.services.pdf_service import PdfService
         data = _make_type_a_data()
-        varied = TypeAVariator().vary(data, seed=42)
+        varied = TypeAVariator().vary(data)
         pdf_bytes = PdfService().generate(varied)
         assert isinstance(pdf_bytes, bytes)
         assert pdf_bytes[:5] == b"%PDF-"
@@ -198,7 +198,7 @@ class TestIntegrationTypeB:
 
     def test_vary_render_produces_html(self):
         data = _make_type_b_data()
-        varied = TypeBVariator().vary(data, seed=42)
+        varied = TypeBVariator().vary(data)
         html = TypeBRenderer().render(varied)
         assert isinstance(html, str)
         assert len(html) > 100
@@ -206,7 +206,7 @@ class TestIntegrationTypeB:
     def test_vary_then_pdf_bytes(self):
         from src.services.pdf_service import PdfService
         data = _make_type_b_data()
-        varied = TypeBVariator().vary(data, seed=42)
+        varied = TypeBVariator().vary(data)
         pdf_bytes = PdfService().generate(varied)
         assert isinstance(pdf_bytes, bytes)
         assert pdf_bytes[:5] == b"%PDF-"
@@ -217,16 +217,17 @@ class TestIntegrationTypeB:
 # ---------------------------------------------------------------------------
 
 class TestSeedReproducibility:
-    def test_type_a_same_seed_gives_same_result(self):
+    def test_type_a_same_input_gives_same_result(self):
+        """Same run_salt + same input → same output."""
         data = _make_type_a_data()
-        r1 = TypeAVariator().vary(data, seed=99)
-        r2 = TypeAVariator().vary(data, seed=99)
+        r1 = TypeAVariator(run_salt=42).vary(data)
+        r2 = TypeAVariator(run_salt=42).vary(data)
         assert r1.rows[0].entry_time == r2.rows[0].entry_time
         assert r1.rows[0].exit_time == r2.rows[0].exit_time
 
-    def test_type_b_same_seed_gives_same_result(self):
+    def test_type_b_same_input_gives_same_result(self):
         data = _make_type_b_data()
-        r1 = TypeBVariator().vary(data, seed=7)
-        r2 = TypeBVariator().vary(data, seed=7)
+        r1 = TypeBVariator(run_salt=42).vary(data)
+        r2 = TypeBVariator(run_salt=42).vary(data)
         assert r1.rows[0].entry_time == r2.rows[0].entry_time
         assert r1.rows[0].exit_time == r2.rows[0].exit_time
